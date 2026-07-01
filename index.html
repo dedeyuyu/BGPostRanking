@@ -408,18 +408,36 @@ function loadTab(tab){
   setSS('syncing');showState('loading');
   fetchSheet(SHEETS[tab].gid)
     .then(function(rows){
-      /* Diagnostic: log what we got from the CSV */
+      /* --- DEEP DIAGNOSTICS --- */
       var firstHdr = rows.length > 0 ? Object.keys(rows[0])[0] : '';
-      var hdrs = rows.length > 0 ? Object.keys(rows[0]).slice(0,6).join(' | ') : '(empty)';
-      console.log('[CSV] Raw rows:', rows.length,
-        '| First header char0:', firstHdr.charCodeAt(0),
-        '| Headers:', hdrs);
+      var allHdrs  = rows.length > 0 ? Object.keys(rows[0]) : [];
+      var r0       = rows[0] || {};
+      var r0src    = r0['source'] !== undefined ? r0['source'] : r0['\uFEFFsource'] || '(key not found)';
+      console.log('[CSV] rows:', rows.length, 'char0:', firstHdr.charCodeAt(0), 'hdrs:', allHdrs.join(','));
+      console.log('[CSV] Row0 source val:', r0src, '| Row0 first5:', JSON.stringify(allHdrs.slice(0,5).map(function(k){return k+':'+r0[k]})));
       raw=csvToRows(rows);
-      console.log('[CSV] After source-filter:', raw.length, 'rows');
+      console.log('[CSV] valid rows:', raw.length);
+      /* If still 0 valid rows, show a visible debug panel */
+      if(raw.length===0 && rows.length>0){
+        var dbg='';
+        dbg+='<div style="max-width:760px;margin:20px auto;background:#fef2f2;border:1px solid #fca5a5;border-radius:10px;padding:18px;font-size:12px;font-family:monospace;white-space:pre-wrap;word-break:break-all;line-height:1.7">';
+        dbg+='<b style="font-size:14px;color:#dc2626">\u{26A0} \u8c03\u8bd5\u4fe1\u606f\uff08\u8bf7\u622a\u56fe\u53d1\u7ed9\u5f00\u53d1\u8005\uff09</b>\n\n';
+        dbg+='CSV\u603b\u884c\u6570: '+rows.length+'\n';
+        dbg+='\u6709\u6548\u884c: '+raw.length+'\n';
+        dbg+='\u7b2c1\u5217\u5934\u540d: '+JSON.stringify(firstHdr)+' (char0='+firstHdr.charCodeAt(0)+')\n';
+        dbg+='\u5168\u5217\u540d ('+allHdrs.length+'\u5217): '+allHdrs.join(' | ')+'\n\n';
+        dbg+='Row[0] source\u5b57\u6bb5: '+JSON.stringify(r0['source'])+'\n';
+        dbg+='Row[0] \u524d6\u5217\u5185\u5bb9:\n';
+        allHdrs.slice(0,6).forEach(function(k){dbg+='  '+JSON.stringify(k)+': '+JSON.stringify(r0[k])+'\n';});
+        dbg+='\nRow[0] \u5b8c\u6574: '+JSON.stringify(r0).slice(0,400)+'...';
+        dbg+='</div>';
+        gel('grid').innerHTML=dbg;
+        gel('uLbl').textContent='CSV:'+rows.length+'\u884c, \u5339\u914d:0 (\u67e5\u770b\u8c03\u8bd5\u6846)';
+        setSS('error'); return;
+      }
       buildTypes();applyRender();
       var now=new Date().toLocaleTimeString('zh-CN',{hour:'2-digit',minute:'2-digit',second:'2-digit'});
-      /* Show diagnostic in update label */
-      gel('uLbl').textContent='\u540c\u6b65: '+now+' | CSV\u5f97'+rows.length+'\u884c \u2192 \u6709\u6548'+raw.length+'\u6761';
+      gel('uLbl').textContent='\u540c\u6b65:'+now+' CSV:'+rows.length+'\u884c\u2192'+raw.length+'\u6761';
       setSS('ok');setBdg(tab,raw.length);
     })
     .catch(function(err){
