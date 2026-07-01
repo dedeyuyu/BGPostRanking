@@ -301,7 +301,7 @@ function tryUnlock() {
    ============================================================ */
 var SHEET_ID = '1ewnOl72H3XSZadHP0hiEH0MVmHJ2IdzB7v7ofcmy824';
 var SHEETS   = [{gid:'1191971696'},{gid:'1038166537'},{gid:'769966364'},{gid:'482985351'}];
-var REFRESH  = 60000;
+var REFRESH  = 90000;
 var tabIdx=0, raw=[], filtered=[], refId=null, dark=false, toastId=null;
 
 function gel(id){return document.getElementById(id)}
@@ -314,29 +314,83 @@ function showToast(msg){var t=gel('toast');t.textContent=msg;t.classList.add('sh
 function imgErr(img){var w=img.closest('.cimg');if(w){w.innerHTML='<div class="noph"><div class="noph-i">&#128444;&#65039;</div><span>\u56fe\u7247\u65e0\u6cd5\u52a0\u8f7d</span></div>';w.classList.add('noc')}}
 window.imgErr=imgErr;
 
+/* Fetch sheet as CSV (works with published sheets and IMPORTRANGE) */
 function fetchSheet(gid){
-  return new Promise(function(res,rej){
-    var cb='_gv_'+Date.now()+'_'+(Math.random()*1e9|0);
-    var url='https://docs.google.com/spreadsheets/d/'+SHEET_ID+'/gviz/tq?tqx=out:json&gid='+gid+'&callback='+cb;
-    var s=document.createElement('script');s.src=url;
-    var tid=setTimeout(function(){done();rej(new Error('\u8bf7\u6c42\u8d85\u65f6'))},18000);
-    function done(){clearTimeout(tid);delete window[cb];try{s.remove()}catch(e){}}
-    window[cb]=function(r){done();try{res(parseGviz(r))}catch(e){rej(e)}};
-    s.onerror=function(){done();rej(new Error('\u52a0\u8f7d\u5931\u8d25\uff0c\u8bf7\u786e\u8ba4\u8868\u683c\u5df2\u516c\u5f00'))};
-    document.head.appendChild(s);
-  });
+  /* Try 1: gviz CSV via no-cors fetch */
+  var csvUrl = 'https://docs.google.com/spreadsheets/d/'+SHEET_ID+'/gviz/tq?tqx=out:csv&gid='+gid;
+  var expUrl = 'https://docs.google.com/spreadsheets/d/'+SHEET_ID+'/export?format=csv&gid='+gid;
+  function tryFetch(url){
+    return fetch(url, {cache:'no-cache'})
+      .then(function(r){
+        if(!r.ok) throw new Error('HTTP '+r.status);
+        return r.text();
+      })
+      .then(function(csv){ return parseCsv(csv); });
+  }
+  return tryFetch(csvUrl).catch(function(){ return tryFetch(expUrl); });
 }
 
-function parseGviz(resp){
-  if(!resp||!resp.table)throw new Error('\u54cd\u5e94\u65e0\u6548');
-  var cols=resp.table.cols||[],rows=resp.table.rows||[],idx={};
-  cols.forEach(function(c,i){if(c.label)idx[c.label.trim().toLowerCase()]=i});
-  function fi(){for(var i=0;i<arguments.length;i++){var k=arguments[i].toLowerCase();if(idx[k]!==undefined)return idx[k]}return -1}
-  var F={src:fi('source'),pid:fi('post id','post_id'),pl:fi('post link','post_link'),td:fi('total data','total_data'),tod:fi('today data','today_data'),ml:fi('male'),fm:fi('female'),lk:fi('like','likes'),cm:fi('comments','comment'),sh:fi('share','shares'),dt:fi('date'),ty:fi('type'),bg:fi('word_bg','word bg'),zh:fi('word_zh','word zh'),im:fi('image link','image_link')};
-  function sv(row,i){if(i<0)return'';var c=row.c&&row.c[i];if(!c||c.v==null)return'';return((c.f!=null)?c.f:String(c.v)).trim()}
-  function nv(row,i){if(i<0)return 0;var c=row.c&&row.c[i];if(!c||c.v==null)return 0;return parseFloat(c.v)||0}
-  return rows.filter(function(r){return r.c&&r.c.some(function(c){return c&&c.v!=null&&c.v!==''})})
-    .map(function(r,i){return{_i:i,source:sv(r,F.src),postId:sv(r,F.pid),postLink:sv(r,F.pl),totalData:nv(r,F.td),todayData:nv(r,F.tod),male:nv(r,F.ml),female:nv(r,F.fm),like:nv(r,F.lk),comments:nv(r,F.cm),share:nv(r,F.sh),date:sv(r,F.dt),type:sv(r,F.ty),wordBg:sv(r,F.bg),wordZh:sv(r,F.zh),imageLink:sv(r,F.im)}})
+/* Simple robust CSV parser */
+function parseCsv(text){
+  var rows=[], cur=[], field='', inQ=false;
+  for(var i=0;i<text.length;i++){
+    var c=text[i];
+    if(inQ){
+      if(c==='"'){
+        if(text[i+1]==='"'){field+='"';i++}
+        else inQ=false;
+      } else field+=c;
+    } else {
+      if(c==='"'){inQ=true}
+      else if(c===','){cur.push(field);field=''}
+      else if(c==='\r'){}
+      else if(c==='\n'){cur.push(field);rows.push(cur);cur=[];field=''}
+      else field+=c;
+    }
+  }
+  if(field||cur.length){cur.push(field);rows.push(cur);}
+  if(!rows.length||rows[0].length<2) throw new Error('\u8868\u683c\u6570\u636e\u4e3a\u7a7a\uff0c\u8bf7\u786e\u8ba4\u5df2\u53d1\u5e03\u5230\u7f51\u7edc');
+  var hdrs=rows[0].map(function(h){return h.trim()});
+  return rows.slice(1)
+    .filter(function(r){return r.some(function(c){return c.trim()!==''})})
+    .map(function(r,i){
+      var obj={_i:i};
+      hdrs.forEach(function(k,j){obj[k]=r[j]!=null?r[j].trim():''});
+      return obj;
+    });
+}
+
+/* Convert flat CSV row objects to our data model */
+function csvToRows(rows){
+  function fv(row,keys){
+    for(var i=0;i<keys.length;i++){
+      var k=keys[i];
+      for(var rk in row){
+        if(rk.toLowerCase()===k)return row[rk]||'';
+      }
+    }
+    return '';
+  }
+  function fn(row,keys){var v=fv(row,keys);return parseFloat(v)||0;}
+  return rows
+    .map(function(r,i){return{
+      _i:i,
+      source:    fv(r,['source']),
+      postId:    fv(r,['post id','post_id']),
+      postLink:  fv(r,['post link','post_link']),
+      totalData: fn(r,['total data','total_data']),
+      todayData: fn(r,['today data','today_data']),
+      male:      fn(r,['male']),
+      female:    fn(r,['female']),
+      like:      fn(r,['like','likes']),
+      comments:  fn(r,['comments','comment']),
+      share:     fn(r,['share','shares']),
+      date:      fv(r,['date']),
+      type:      fv(r,['type']),
+      wordBg:    fv(r,['word_bg','word bg']),
+      wordZh:    fv(r,['word_zh','word zh']),
+      imageLink: fv(r,['image link','image_link'])
+    }})
     .filter(function(d){return d.source});
 }
 
@@ -348,12 +402,18 @@ function setSS(s){
 
 function loadTab(tab){
   setSS('syncing');showState('loading');
-  fetchSheet(SHEETS[tab].gid).then(function(data){
-    raw=data;buildTypes();applyRender();
-    var now=new Date().toLocaleTimeString('zh-CN',{hour:'2-digit',minute:'2-digit',second:'2-digit'});
-    gel('uLbl').textContent='\u4e0a\u6b21\u540c\u6b65: '+now;
-    setSS('ok');setBdg(tab,raw.length);
-  }).catch(function(err){showState('error',err.message);setSS('error')});
+  fetchSheet(SHEETS[tab].gid)
+    .then(function(rows){
+      raw=csvToRows(rows);buildTypes();applyRender();
+      var now=new Date().toLocaleTimeString('zh-CN',{hour:'2-digit',minute:'2-digit',second:'2-digit'});
+      gel('uLbl').textContent='\u4e0a\u6b21\u540c\u6b65: '+now;
+      setSS('ok');setBdg(tab,raw.length);
+    })
+    .catch(function(err){
+      var msg=err.message||String(err);
+      showState('error',msg);
+      setSS('error');
+    });
 }
 function restartRefresh(){clearInterval(refId);refId=setInterval(function(){loadTab(tabIdx)},REFRESH)}
 
@@ -401,7 +461,22 @@ function card(d,i){
 }
 
 function showState(t,msg){
-  var s={loading:'<div class="state"><div class="spin"></div><div class="stt">\u6b63\u5728\u52a0\u8f7d\u6570\u636e...</div></div>',empty:'<div class="state"><div class="sti">&#128269;</div><div class="stt">\u6ca1\u6709\u5339\u914d\u7684\u6570\u636e</div><div class="sts">\u5c1d\u8bd5\u8c03\u6574\u7b5b\u9009\u6761\u4ef6\u6216\u5207\u6362\u5206\u8868</div></div>',error:'<div class="state"><div class="sti">&#9888;&#65039;</div><div class="stt">\u52a0\u8f7d\u5931\u8d25</div><div class="sts">'+h(msg||'')+'\u003cbr\u003e\u003cbr\u003e\u8bf7\u786e\u8ba4 Google \u8868\u683c\u5df2\u8bbe\u7f6e\u4e3a\u300c\u77e5\u9053\u94fe\u63a5\u7684\u4eba\u5747\u53ef\u67e5\u770b\u300d</div></div>'};
+  var errHtml='<div class="state"><div class="sti">&#9888;&#65039;</div>'+
+    '<div class="stt">\u52a0\u8f7d\u5931\u8d25</div>'+
+    '<div class="sts" style="font-size:12px;background:#fef2f2;border:1px solid #fecaca;border-radius:8px;padding:12px 16px;text-align:left;">'+
+    '<b style="color:#dc2626">\u9519\u8bef\u4fe1\u606f:</b> '+h(msg||'\u672a\u77e5\u9519\u8bef')+'<br><br>'+
+    '<b>\u8bf7\u6309\u4ee5\u4e0b\u6b65\u9aa4\u89e3\u51b3:</b><br>'+
+    '1. \u6253\u5f00 Google \u8868\u683c \u2192 \u300c\u6587\u4ef6\u300d\u83dc\u5355 \u2192 \u300c\u5206\u4eab\u300d \u2192 \u300c\u53d1\u5e03\u5230\u7f51\u7edc\u300d<br>'+
+    '2. \u9009\u62e9 \u300c\u6574\u4e2a\u6574\u6863\u300d + \u300c\u7f51\u9875\u300d\uff0c\u70b9\u300c\u53d1\u5e03\u300d<br>'+
+    '3. \u5237\u65b0\u6b64\u9875\u9762'+
+    '</div>'+
+    '<button onclick="loadTab(tabIdx)" style="margin-top:14px;padding:8px 20px;background:#2563eb;color:#fff;border:none;border-radius:8px;cursor:pointer;font-size:13px;">&#8635; \u91cd\u8bd5</button>'+
+    '</div>';
+  var s={
+    loading:'<div class="state"><div class="spin"></div><div class="stt">\u6b63\u5728\u52a0\u8f7d\u6570\u636e...</div></div>',
+    empty:'<div class="state"><div class="sti">&#128269;</div><div class="stt">\u6ca1\u6709\u5339\u914d\u7684\u6570\u636e</div><div class="sts">\u5c1d\u8bd5\u8c03\u6574\u7b5b\u9009\u6761\u4ef6\u6216\u5207\u6362\u5206\u8868</div></div>',
+    error: errHtml
+  };
   gel('grid').innerHTML=s[t]||s.empty;
 }
 
