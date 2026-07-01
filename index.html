@@ -213,10 +213,10 @@
 </main>
 
 <nav class="bnav" id="bnav">
-  <button class="tbtn active" data-tab="0">&#128197; &#20170;&#24110;&#25490;&#21517; <span class="tbdg" id="tb0"></span></button>
-  <button class="tbtn" data-tab="1">&#128197; &#26628;&#24110;&#25490;&#21517; <span class="tbdg" id="tb1"></span></button>
-  <button class="tbtn" data-tab="2">&#128197; &#21069;&#24110;&#25490;&#21517; <span class="tbdg" id="tb2"></span></button>
-  <button class="tbtn" data-tab="3">&#128269; &#25163;&#21160;&#26597;&#35810; <span class="tbdg" id="tb3"></span></button>
+  <button class="tbtn active" data-tab="0">&#128197;&#20170;&#24086;&#25490;&#21517; <span class="tbdg" id="tb0"></span></button>
+  <button class="tbtn" data-tab="1">&#128197;&#26152;&#24086;&#25490;&#21517; <span class="tbdg" id="tb1"></span></button>
+  <button class="tbtn" data-tab="2">&#128197;&#21069;&#24086;&#25490;&#21517; <span class="tbdg" id="tb2"></span></button>
+  <button class="tbtn" data-tab="3">&#128269;&#25163;&#21160;&#26597;&#35810; <span class="tbdg" id="tb3"></span></button>
 </nav>
 
 <div class="lbox2" id="lb">
@@ -404,13 +404,20 @@ function loadTab(tab){
   setSS('syncing');showState('loading');
   fetchSheet(SHEETS[tab].gid)
     .then(function(rows){
-      raw=csvToRows(rows);buildTypes();applyRender();
+      /* Diagnostic: log what we got from the CSV */
+      var hdrs = rows.length > 0 ? Object.keys(rows[0]).join(' | ') : '(empty)';
+      console.log('[CSV] Raw rows:', rows.length, 'Headers:', hdrs);
+      raw=csvToRows(rows);
+      console.log('[CSV] After source-filter:', raw.length, 'rows');
+      buildTypes();applyRender();
       var now=new Date().toLocaleTimeString('zh-CN',{hour:'2-digit',minute:'2-digit',second:'2-digit'});
-      gel('uLbl').textContent='\u4e0a\u6b21\u540c\u6b65: '+now;
+      /* Show diagnostic in update label */
+      gel('uLbl').textContent='\u540c\u6b65: '+now+' | CSV\u5f97'+rows.length+'\u884c \u2192 \u6709\u6548'+raw.length+'\u6761';
       setSS('ok');setBdg(tab,raw.length);
     })
     .catch(function(err){
       var msg=err.message||String(err);
+      console.error('[CSV] Error:', msg);
       showState('error',msg);
       setSS('error');
     });
