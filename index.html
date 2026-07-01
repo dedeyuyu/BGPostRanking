@@ -332,6 +332,8 @@ function fetchSheet(gid){
 
 /* Simple robust CSV parser */
 function parseCsv(text){
+  /* Strip UTF-8 BOM (\uFEFF) which Google Sheets sometimes prepends */
+  if(text.charCodeAt(0)===0xFEFF) text=text.slice(1);
   var rows=[], cur=[], field='', inQ=false;
   for(var i=0;i<text.length;i++){
     var c=text[i];
@@ -350,7 +352,7 @@ function parseCsv(text){
   }
   if(field||cur.length){cur.push(field);rows.push(cur);}
   if(!rows.length||rows[0].length<2) throw new Error('\u8868\u683c\u6570\u636e\u4e3a\u7a7a\uff0c\u8bf7\u786e\u8ba4\u5df2\u53d1\u5e03\u5230\u7f51\u7edc');
-  var hdrs=rows[0].map(function(h){return h.trim()});
+  var hdrs=rows[0].map(function(h){return h.trim().replace(/[\uFEFF\u200B-\u200D]/g,'')});
   return rows.slice(1)
     .filter(function(r){return r.some(function(c){return c.trim()!==''})})
     .map(function(r,i){
@@ -366,7 +368,9 @@ function csvToRows(rows){
     for(var i=0;i<keys.length;i++){
       var k=keys[i];
       for(var rk in row){
-        if(rk.toLowerCase()===k)return row[rk]||'';
+        /* Strip BOM and invisible chars from key before comparing */
+        var cleanKey=rk.replace(/[\uFEFF\u200B-\u200D]/g,'').trim().toLowerCase();
+        if(cleanKey===k)return row[rk]||'';
       }
     }
     return '';
@@ -405,8 +409,11 @@ function loadTab(tab){
   fetchSheet(SHEETS[tab].gid)
     .then(function(rows){
       /* Diagnostic: log what we got from the CSV */
-      var hdrs = rows.length > 0 ? Object.keys(rows[0]).join(' | ') : '(empty)';
-      console.log('[CSV] Raw rows:', rows.length, 'Headers:', hdrs);
+      var firstHdr = rows.length > 0 ? Object.keys(rows[0])[0] : '';
+      var hdrs = rows.length > 0 ? Object.keys(rows[0]).slice(0,6).join(' | ') : '(empty)';
+      console.log('[CSV] Raw rows:', rows.length,
+        '| First header char0:', firstHdr.charCodeAt(0),
+        '| Headers:', hdrs);
       raw=csvToRows(rows);
       console.log('[CSV] After source-filter:', raw.length, 'rows');
       buildTypes();applyRender();
