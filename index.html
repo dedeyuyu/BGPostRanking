@@ -314,20 +314,26 @@ function showToast(msg){var t=gel('toast');t.textContent=msg;t.classList.add('sh
 function imgErr(img){var w=img.closest('.cimg');if(w){w.innerHTML='<div class="noph"><div class="noph-i">&#128444;&#65039;</div><span>\u56fe\u7247\u65e0\u6cd5\u52a0\u8f7d</span></div>';w.classList.add('noc')}}
 window.imgErr=imgErr;
 
-/* Fetch sheet as CSV (works with published sheets and IMPORTRANGE) */
+/* Fetch sheet as CSV — use export URL first (strictly treats row 1 as header) */
 function fetchSheet(gid){
-  /* Try 1: gviz CSV via no-cors fetch */
-  var csvUrl = 'https://docs.google.com/spreadsheets/d/'+SHEET_ID+'/gviz/tq?tqx=out:csv&gid='+gid;
-  var expUrl = 'https://docs.google.com/spreadsheets/d/'+SHEET_ID+'/export?format=csv&gid='+gid;
+  /* Primary: /export?format=csv — row 1 is ALWAYS the header */
+  var expUrl  = 'https://docs.google.com/spreadsheets/d/'+SHEET_ID+'/export?format=csv&gid='+gid;
+  /* Fallback 1: gviz CSV with explicit headers=1 */
+  var gviz1   = 'https://docs.google.com/spreadsheets/d/'+SHEET_ID+'/gviz/tq?tqx=out:csv&headers=1&gid='+gid;
+  /* Fallback 2: gviz CSV without headers param */
+  var gviz2   = 'https://docs.google.com/spreadsheets/d/'+SHEET_ID+'/gviz/tq?tqx=out:csv&gid='+gid;
+
   function tryFetch(url){
-    return fetch(url, {cache:'no-cache'})
+    return fetch(url,{cache:'no-cache'})
       .then(function(r){
-        if(!r.ok) throw new Error('HTTP '+r.status);
+        if(!r.ok)throw new Error('HTTP '+r.status+' from '+url.split('?')[0].split('/').pop());
         return r.text();
       })
-      .then(function(csv){ return parseCsv(csv); });
+      .then(function(csv){return parseCsv(csv);});
   }
-  return tryFetch(csvUrl).catch(function(){ return tryFetch(expUrl); });
+  return tryFetch(expUrl)
+    .catch(function(){return tryFetch(gviz1);})
+    .catch(function(){return tryFetch(gviz2);});
 }
 
 /* Simple robust CSV parser */
