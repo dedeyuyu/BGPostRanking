@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>BG &#24110;&#25991;&#25490;&#34892; &mdash; &#31038;&#23550;&#25968;&#25454;&#20284;&#34920;&#30436;</title>
+  <title>BG &#24086;&#25991;&#25490;&#34892; &mdash; &#31038;&#23550;&#25968;&#25454;&#20284;&#34920;&#30436;</title>
   <meta name="description" content="BG&#24110;&#25991;&#25490;&#34892; - &#23454;&#26102;&#31038;&#20132;&#23550;&#20307;&#24110;&#25991;&#25968;&#25454;&#36861;&#36394;&#20284;&#34920;&#30436;">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -74,9 +74,9 @@
     .card{background:var(--bgc);border-radius:var(--r4);border:1px solid var(--bo);box-shadow:var(--s1);transition:transform var(--tr),box-shadow var(--tr),border-color var(--tr);position:relative;animation:cIn .35s ease backwards}
     .card:hover{transform:translateY(-4px);box-shadow:var(--s3);border-color:var(--bo2);z-index:2}
     @keyframes cIn{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:translateY(0)}}
-    .cimg{position:relative;height:192px;border-radius:var(--r4) var(--r4) 0 0;overflow:hidden;background:var(--bgm);cursor:pointer}
+    .cimg{position:relative;height:280px;border-radius:var(--r4) var(--r4) 0 0;overflow:hidden;background:#0d1117;cursor:pointer}
     .cimg.noc{cursor:default}
-    .cimg img{width:100%;height:100%;object-fit:cover;transition:transform .45s ease}
+    .cimg img{width:100%;height:100%;object-fit:contain;transition:transform .45s ease}
     .cimg:not(.noc):hover img{transform:scale(1.06)}
     .covr{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,0);transition:background var(--tr)}
     .cimg:not(.noc):hover .covr{background:rgba(0,0,0,.22)}
@@ -163,7 +163,7 @@
 <header class="hdr">
   <div class="brand">
     <div class="blogo">BG</div>
-    <div><div class="bname">BG &#24110;&#25991;&#25490;&#34892;</div><div class="bsub">&#31038;&#23550;&#25968;&#25454;&#20284;&#34920;&#30436;</div></div>
+    <div><div class="bname">BG &#24086;&#25991;&#25490;&#34892;</div><div class="bsub">&#31038;&#23550;&#25968;&#25454;&#20284;&#34920;&#30436;</div></div>
   </div>
   <div class="hacts">
     <div class="spill"><div class="sdot syncing" id="syncDot"></div><span id="syncTxt">&#36830;&#25509;&#20013;...</span></div>
@@ -237,7 +237,29 @@
    - Both functions defined as globals BEFORE they are called
    ============================================================ */
 var _AUTH_KEY = 'bg_auth_v1';
+var _AUTH_EXP = 12 * 60 * 60 * 1000; /* 12 hours in ms */
 var _AUTH_PWD = 'jwsyle@1991';
+
+/* Auth helpers using localStorage with 12h expiry */
+function authSave(){
+  try{
+    localStorage.setItem(_AUTH_KEY, JSON.stringify({t: Date.now()}));
+  }catch(e){
+    try{sessionStorage.setItem(_AUTH_KEY,'1');}catch(e2){}
+  }
+}
+function authCheck(){
+  try{
+    var raw = localStorage.getItem(_AUTH_KEY);
+    if(raw){
+      var obj = JSON.parse(raw);
+      if(obj && Date.now() - obj.t < _AUTH_EXP) return true;
+      localStorage.removeItem(_AUTH_KEY);
+    }
+  }catch(e){}
+  /* Fallback to sessionStorage */
+  try{ return sessionStorage.getItem(_AUTH_KEY)==='1'; }catch(e){ return false; }
+}
 
 function toggleEye() {
   var p = document.getElementById('lockPwd');
@@ -258,7 +280,7 @@ function tryUnlock() {
   if (val === _AUTH_PWD) {
     if (err) err.textContent = '';
     if (btn) btn.textContent = '&#10003; &#39564;&#35777;&#25104;&#21151;...';
-    try { sessionStorage.setItem(_AUTH_KEY, '1'); } catch(e) {}
+    authSave();
     setTimeout(function() {
       if (ov) ov.style.display = 'none';
       document.body.classList.remove('locked');
@@ -279,18 +301,16 @@ function tryUnlock() {
   var ov = document.getElementById('lockOverlay');
   var p  = document.getElementById('lockPwd');
   if (!ov || !p) return;
-  try {
-    var ok = sessionStorage.getItem(_AUTH_KEY) === '1';
-    if (ok) {
-      ov.style.display = 'none';
-      document.body.classList.remove('locked');
-      loadTab(0);
-      restartRefresh();
-    } else {
-      document.body.classList.add('locked');
-      p.focus();
-    }
-  } catch(e) {
+  /* Enter key submits */
+  p.addEventListener('keydown', function(e){
+    if(e.key==='Enter') tryUnlock();
+  });
+  if (authCheck()) {
+    ov.style.display = 'none';
+    document.body.classList.remove('locked');
+    loadTab(0);
+    restartRefresh();
+  } else {
     document.body.classList.add('locked');
     p.focus();
   }
@@ -301,7 +321,7 @@ function tryUnlock() {
    ============================================================ */
 var SHEET_ID = '1ewnOl72H3XSZadHP0hiEH0MVmHJ2IdzB7v7ofcmy824';
 var SHEETS   = [{gid:'1191971696'},{gid:'1038166537'},{gid:'769966364'},{gid:'482985351'}];
-var REFRESH  = 90000;
+var REFRESH  = 600000; /* 10 minutes - data from Google Sheets updates max every 5 min */
 var tabIdx=0, raw=[], filtered=[], refId=null, dark=false, toastId=null;
 
 function gel(id){return document.getElementById(id)}
@@ -453,7 +473,21 @@ function loadTab(tab){
       setSS('error');
     });
 }
-function restartRefresh(){clearInterval(refId);refId=setInterval(function(){loadTab(tabIdx)},REFRESH)}
+function restartRefresh(){
+  clearInterval(refId);
+  refId=setInterval(function(){
+    /* Silent refresh: don't show loading spinner, just update data in background */
+    setSS('syncing');
+    fetchSheet(SHEETS[tabIdx].gid)
+      .then(function(rows){
+        raw=csvToRows(rows);buildTypes();applyRender();
+        var now=new Date().toLocaleTimeString('zh-CN',{hour:'2-digit',minute:'2-digit',second:'2-digit'});
+        gel('uLbl').textContent='\u540c\u6b65:'+now+' '+rows.length+'\u884c\u2192'+raw.length+'\u6761';
+        setSS('ok');
+      })
+      .catch(function(){setSS('error');});
+  },REFRESH);
+}
 
 function buildTypes(){
   var prev=gel('fType').value,seen={},types=[];
